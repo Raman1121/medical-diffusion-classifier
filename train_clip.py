@@ -20,6 +20,7 @@ from typing import Optional
 import torch
 from datasets import load_dataset
 from PIL import Image
+from torchvision import transforms
 from torchvision.io import ImageReadMode, read_image
 from torchvision.transforms import CenterCrop, ConvertImageDtype, Normalize, Resize
 from torchvision.transforms.functional import InterpolationMode
@@ -55,21 +56,22 @@ dataset_name_mapping = {
 
 # We use torchvision for faster image pre-processing. The transforms are implemented as nn.Module,
 # so we jit it to be faster.
-class Transform(torch.nn.Module):
-    def __init__(self, image_size, mean, std):
-        super().__init__()
-        self.transforms = torch.nn.Sequential(
-            Resize([image_size], interpolation=InterpolationMode.BICUBIC),
-            CenterCrop(image_size),
-            ConvertImageDtype(torch.float),
-            Normalize(mean, std),
-        )
+# class Transform(torch.nn.Module):
+#     def __init__(self, image_size, mean, std):
+#         super().__init__()
+#         self.transforms = torch.nn.Sequential(
+#             Resize([image_size], interpolation=InterpolationMode.BICUBIC),
+#             CenterCrop(image_size),
+#             ConvertImageDtype(torch.float),
+#             transforms.ToTensor(),
+#             Normalize(mean, std),
+#         )
 
-    def forward(self, x) -> torch.Tensor:
-        """`x` should be an instance of `PIL.Image.Image`"""
-        with torch.no_grad():
-            x = self.transforms(x)
-        return x
+#     def forward(self, x) -> torch.Tensor:
+#         """`x` should be an instance of `PIL.Image.Image`"""
+#         with torch.no_grad():
+#             x = self.transforms(x)
+#         return x
 
 
 # def collate_fn(examples):
@@ -260,12 +262,31 @@ def main():
     #             f"--caption_column' value '{data_args.caption_column}' needs to be one of: {', '.join(column_names)}"
     #         )
 
+    train_transforms = transforms.Compose(
+        [
+            transforms.Resize(config.vision_config.image_size, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(config.vision_config.image_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.5], [0.5]),
+        ]
+    )
+
+    test_transforms = transforms.Compose(
+        [
+            transforms.Resize(config.vision_config.image_size, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(config.vision_config.image_size),
+            # transforms.RandomHorizontalFlip() if args.random_flip else transforms.Lambda(lambda x: x),
+            transforms.ToTensor(),
+        ]
+    )
+
     # 7. Preprocessing the datasets.
     # Initialize torchvision transforms and jit it for faster processing.
-    image_transformations = Transform(
-        config.vision_config.image_size, image_processor.image_mean, image_processor.image_std
-    )
-    image_transformations = torch.jit.script(image_transformations)
+    # image_transformations = Transform(
+    #     config.vision_config.image_size, image_processor.image_mean, image_processor.image_std
+    # )
+    # image_transformations = torch.jit.script(image_transformations)
 
     # Preprocessing the datasets.
     # We need to tokenize input captions and transform the images.
@@ -316,7 +337,7 @@ def main():
         train_dataset = RetinalFundusDatasetCLIP(
             train_csv,
             tokenizer=tokenizer,
-            transform=image_transformations,
+            transform=train_transforms,
             seed=42,
             img_path_key=data_args.image_column,
             caption_col_key=data_args.caption_column,
@@ -352,7 +373,7 @@ def main():
         eval_dataset = RetinalFundusDatasetCLIP(
             test_csv,
             tokenizer=tokenizer,
-            transform=image_transformations,
+            transform=test_transforms,
             seed=42,
             img_path_key=data_args.image_column,
             caption_col_key=data_args.caption_column,
