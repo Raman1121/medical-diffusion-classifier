@@ -356,132 +356,26 @@ def main():
         ]
     )
 
-    train_dataset = RetinalFundusDataset(
-        train_csv,
-        tokenizer=tokenizer,
-        transform=train_transforms,
-        seed=args.seed,
-        img_path_key=args.image_column,
-        caption_col_key=args.caption_column,
-    )
-    test_dataset = RetinalFundusDataset(
-        test_csv,
-        tokenizer=tokenizer,
-        transform=test_transforms,
-        seed=args.seed,
-        img_path_key=args.image_column,
-        caption_col_key=args.caption_column,
-    )
-
-    # dataset = load_dataset(
-    #     "csv",
-    #     data_files={"train": args.train_csv, "test": args.test_csv},
-    #     cache_dir=args.cache_dir,
-    # )
-
-    # test_csv = pd.read_csv(args.test_csv)
-    # args.validation_prompts = test_csv[args.caption_column].tolist()[0:20]      # Selecting only 20 images for validation
-
-    # # 2) Map a function to open the images from "path"
-    # def open_images_safe(batch):
-    #     new_images = []
-        
-    #     for file_path in batch['path']:
-    #         try:
-    #             img = Image.open(file_path).convert("RGB")
-    #             new_images.append(img)
-    #         except Exception as e:
-    #             print(file_path)
-    #             import pdb; pdb.set_trace()
-            
-    #     batch["image"] = new_images
-    #     return batch
-
-
-    # dataset["train"] = dataset["train"].map(open_images_safe, num_proc=1, batched=True, batch_size=16)
-
-    # # Preprocessing the datasets.
-    # # We need to tokenize inputs and targets.
-    # column_names = dataset["train"].column_names
-
-    # # 6. Get the column names for input/target.
-    # if args.image_column is None:
-    #     image_column = column_names[0]
-    # else:
-    #     image_column = args.image_column
-    #     if image_column not in column_names:
-    #         raise ValueError(
-    #             f"--image_column' value '{args.image_column}' needs to be one of: {', '.join(column_names)}"
-    #         )
-
-    # if args.caption_column is None:
-    #     caption_column = column_names[1]
-    # else:
-    #     caption_column = args.caption_column
-    #     if caption_column not in column_names:
-    #         raise ValueError(
-    #             f"--caption_column' value '{args.caption_column}' needs to be one of: {', '.join(column_names)}"
-    #         )
-
-
-    # # Preprocessing the datasets.
-    # # We need to tokenize input captions and transform the images.
-    # def tokenize_captions(examples, is_train=True):
-    #     captions = []
-    #     for caption in examples[caption_column]:
-    #         if isinstance(caption, str):
-    #             captions.append(caption)
-    #         elif isinstance(caption, (list, np.ndarray)):
-    #             # take a random caption if there are multiple
-    #             captions.append(random.choice(caption) if is_train else caption[0])
-    #         else:
-    #             raise ValueError(
-    #                 f"Caption column `{caption_column}` should contain either strings or lists of strings."
-    #             )
-    #     inputs = tokenizer(
-    #         captions,
-    #         max_length=tokenizer.model_max_length,
-    #         padding="max_length",
-    #         truncation=True,
-    #         return_tensors="pt"
-    #     )
-    #     return inputs.input_ids
-
-    # # Define the image transforms
-    # train_transforms = transforms.Compose(
-    #     [
-    #         transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-    #         transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution),
-    #         transforms.RandomHorizontalFlip() if args.random_flip else transforms.Lambda(lambda x: x),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize([0.5], [0.5]),
-    #     ]
-    # )
-
-    # def preprocess_train(examples):
-    #     # examples[image_column] contains a list of paths
-    #     try:
-    #         images = [Image.open(path).convert("RGB") for path in examples[image_column]]
-    #     except:
-    #         print(examples[image_column])
-    #     examples["pixel_values"] = [train_transforms(image) for image in images]
-    #     examples["input_ids"] = tokenize_captions(examples)
-    #     return examples
-
-
-    # with accelerator.main_process_first():
-    #     if args.max_train_samples is not None:
-    #         dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
-    #     # Set the training transforms
-    #     train_dataset = dataset["train"].with_transform(preprocess_train)
-
-
-    # def collate_fn(examples):
-    #     pixel_values = torch.stack([example["pixel_values"] for example in examples])
-    #     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
-    #     input_ids = torch.stack([example["input_ids"] for example in examples])
-    #     return {"pixel_values": pixel_values, "input_ids": input_ids}
-
+    assert args.dataset_name is not None
+    if(args.dataset_name == 'fundus'):
+        train_dataset = RetinalFundusDataset(
+            train_csv,
+            tokenizer=tokenizer,
+            transform=train_transforms,
+            seed=args.seed,
+            img_path_key=args.image_column,
+            caption_col_key=args.caption_column,
+        )
+        test_dataset = RetinalFundusDataset(
+            test_csv,
+            tokenizer=tokenizer,
+            transform=test_transforms,
+            seed=args.seed,
+            img_path_key=args.image_column,
+            caption_col_key=args.caption_column,
+        )
+    else:
+        raise NotImplementedError(f"Dataset {args.dataset_name} not implemented")
 
     # DataLoader creation
     train_dataloader = torch.utils.data.DataLoader(

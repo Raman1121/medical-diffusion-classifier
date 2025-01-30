@@ -32,9 +32,7 @@ def parse_args_training():
         type=str,
         default=None,
         help=(
-            "The name of the Dataset (from the HuggingFace hub) to train on (could be your own, possibly private,"
-            " dataset). It can also be a path pointing to a local copy of a dataset in your filesystem,"
-            " or to a folder containing files that 🤗 Datasets can understand."
+            "The name of the Dataset."
         ),
     )
     parser.add_argument(
