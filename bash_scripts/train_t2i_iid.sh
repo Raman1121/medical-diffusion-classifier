@@ -3,7 +3,7 @@ source /raid/s2198939/miniconda3/bin/activate demm
 cd /raid/s2198939/medical-diffusion-classifier
 
 RESOLUTION=512
-BATCH_SIZE=24
+BATCH_SIZE=20
 GRAD_ACC_STEPS=1
 LR=1e-5
 WARMUP_STEPS=0

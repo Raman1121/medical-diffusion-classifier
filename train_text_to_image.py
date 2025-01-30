@@ -116,6 +116,7 @@ def main():
 
     MODEL_NAME_MAPPING_DICT = {
         "CompVis/stable-diffusion-v1-4": "SD-V1-4",
+        "stabilityai/stable-diffusion-2": "SD-V2",
         "Efficient-Large-Model/Sana_600M_512px_diffusers": "Sana_600M",
     }
 
@@ -134,7 +135,12 @@ def main():
                 " use `--variant=non_ema` instead."
             ),
         )
+    
+    args.output_dir = os.path.join(args.output_dir, args.training_setting, str(args.resolution))
+    os.makedirs(args.output_dir, exist_ok=True)
+
     logging_dir = os.path.join(args.output_dir, args.logging_dir)
+    os.makedirs(logging_dir, exist_ok=True)
 
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
 
@@ -682,7 +688,7 @@ def main():
             revision=args.revision,
             variant=args.variant,
         )
-        model_name = MODEL_NAME_MAPPING_DICT[args.pretrained_model_name_or_path] + "_" + args.training_setting + "_" + args.resolution
+        model_name = MODEL_NAME_MAPPING_DICT[args.pretrained_model_name_or_path] + "_" + args.training_setting + "_" + str(args.resolution)
         pipeline.save_pretrained(os.path.join(args.output_dir, model_name))
 
         # Run a final round of inference.

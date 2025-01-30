@@ -3,7 +3,7 @@ source /raid/s2198939/miniconda3/bin/activate demm
 cd /raid/s2198939/medical-diffusion-classifier
 
 RESOLUTION=512
-BATCH_SIZE=24
+BATCH_SIZE=20
 GRAD_ACC_STEPS=1
 LR=1e-5
 WARMUP_STEPS=0
@@ -20,7 +20,7 @@ OUTPUT_DIR="OUTPUT"
 
 CUDA_VISIBLE_DEVICES=4,5,6,7
 
-CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES accelerate launch --multi_gpu train_text_to_image.py \
+CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES accelerate launch --multi_gpu --main_process_port 12345 train_text_to_image.py \
   --mixed_precision="fp16" \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --use_ema \
