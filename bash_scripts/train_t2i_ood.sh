@@ -14,6 +14,7 @@ TRAINING_SETTING="OOD"
 DATASET="fundus"
 TRAIN_CSV="/raid/s2198939/Fundus_Images/OOD-Splits/train.csv"
 TEST_CSV="/raid/s2198939/Fundus_Images/OOD-Splits/test.csv"
+RESUME_FROM_CKPT="/raid/s2198939/medical-diffusion-classifier/OUTPUT/OOD/512/checkpoint-18500"
 
 MODEL_NAME="CompVis/stable-diffusion-v1-4"
 OUTPUT_DIR="OUTPUT"
@@ -40,4 +41,6 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES accelerate launch --multi_gpu --main_
   --lr_scheduler="constant" \
   --lr_warmup_steps=$WARMUP_STEPS \
   --output_dir=$OUTPUT_DIR \
-  --enable_xformers_memory_efficient_attention
+  --enable_xformers_memory_efficient_attention \
+  --resume_from_checkpoint=$RESUME_FROM_CKPT \
+  --checkpoints_total_limit=4
