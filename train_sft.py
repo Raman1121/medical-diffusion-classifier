@@ -20,6 +20,7 @@ import argparse
 import copy
 import importlib
 import json
+import pandas as pd
 import logging
 import os
 import time
@@ -42,6 +43,9 @@ from timm.models import create_model, safe_model_name, resume_checkpoint, load_c
 from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.utils import ApexScaler, NativeScaler
+
+from sft_data import RetinalFundusDatasetSFT
+from parse_args_sft import _parse_args
 
 try:
     from apex import amp
@@ -308,38 +312,67 @@ def main():
     else:
         input_img_mode = args.input_img_mode
 
-    dataset_train = create_dataset(
-        args.dataset,
-        root=args.data_dir,
-        split=args.train_split,
-        is_training=True,
-        class_map=args.class_map,
-        download=args.dataset_download,
-        batch_size=args.batch_size,
-        seed=args.seed,
-        repeats=args.epoch_repeats,
-        input_img_mode=input_img_mode,
-        input_key=args.input_key,
-        target_key=args.target_key,
-        num_samples=args.train_num_samples,
-        trust_remote_code=args.dataset_trust_remote_code,
-    )
+    # dataset_train = create_dataset(
+    #     args.dataset,
+    #     root=args.data_dir,
+    #     split=args.train_split,
+    #     is_training=True,
+    #     class_map=args.class_map,
+    #     download=args.dataset_download,
+    #     batch_size=args.batch_size,
+    #     seed=args.seed,
+    #     repeats=args.epoch_repeats,
+    #     input_img_mode=input_img_mode,
+    #     input_key=args.input_key,
+    #     target_key=args.target_key,
+    #     num_samples=args.train_num_samples,
+    #     trust_remote_code=args.dataset_trust_remote_code,
+    # )
+
+    assert args.train_csv is not None
+    assert args.test_csv is not None
+
+    train_csv = pd.read_csv(args.train_csv)
+    test_csv = pd.read_csv(args.test_csv)
+
+    if(args.train_num_samples is not None):
+        print("Sampling {} samples from training set".format(args.train_num_samples))
+        train_csv = train_csv.sample(args.train_num_samples).reset_index(drop=True)
+
+    if(args.dataset == 'fundus'):
+        dataset_train = RetinalFundusDatasetSFT(
+            df=train_csv,
+            transform=None,
+            seed=args.seed,
+            img_path_key='path',
+            diagnosis_col_key='Unhealthy',
+        )
+    else:
+        raise NotImplementedError(f"Dataset {args.dataset} not implemented")
 
     if args.val_split:
-        dataset_eval = create_dataset(
-            args.dataset,
-            root=args.data_dir,
-            split=args.val_split,
-            is_training=False,
-            class_map=args.class_map,
-            download=args.dataset_download,
-            batch_size=args.batch_size,
-            input_img_mode=input_img_mode,
-            input_key=args.input_key,
-            target_key=args.target_key,
-            num_samples=args.val_num_samples,
-            trust_remote_code=args.dataset_trust_remote_code,
-        )
+        # dataset_eval = create_dataset(
+        #     args.dataset,
+        #     root=args.data_dir,
+        #     split=args.val_split,
+        #     is_training=False,
+        #     class_map=args.class_map,
+        #     download=args.dataset_download,
+        #     batch_size=args.batch_size,
+        #     input_img_mode=input_img_mode,
+        #     input_key=args.input_key,
+        #     target_key=args.target_key,
+        #     num_samples=args.val_num_samples,
+        #     trust_remote_code=args.dataset_trust_remote_code,
+        # )
+        if(args.dataset == 'fundus'):
+            dataset_eval = RetinalFundusDatasetSFT(
+                df=test_csv,
+                transform=None,
+                seed=args.seed,
+                img_path_key='path',
+                diagnosis_col_key='Unhealthy',
+            )
 
     # setup mixup / cutmix
     collate_fn = None

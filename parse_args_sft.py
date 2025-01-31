@@ -1,5 +1,6 @@
 import argparse
-
+from timm import utils
+import yaml
 
 # The first arg parser parses out only the --config argument, this argument is used to
 # load a yaml file containing key-values that override the defaults for the main parser below
@@ -18,7 +19,11 @@ parser.add_argument('data', nargs='?', metavar='DIR', const=None,
 group.add_argument('--data-dir', metavar='DIR',
                     help='path to dataset (root dir)')
 group.add_argument('--dataset', metavar='NAME', default='',
-                    help='dataset type + name ("<type>/<name>") (default: ImageFolder or ImageTar if empty)')
+                    help='dataset type + name ("<type>/<name>")')
+group.add_argument('--train_csv', default=None, required=True, type=str,
+                    help='path to train csv file')           
+group.add_argument('--test_csv', default=None, required=True, type=str,
+                    help='path to test csv file')          
 group.add_argument('--train-split', metavar='NAME', default='train',
                    help='dataset train split (default: train)')
 group.add_argument('--val-split', metavar='NAME', default='validation',
@@ -74,7 +79,7 @@ group.add_argument('--interpolation', default='', type=str, metavar='NAME',
                    help='Image resize interpolation type (overrides model)')
 group.add_argument('-b', '--batch-size', type=int, default=128, metavar='N',
                    help='Input batch size for training (default: 128)')
-group.add_argument('-vb', '--validation-batch-size', type=int, default=None, metavar='N',
+group.add_argument('-vb', '--validation-batch-size', type=int, default=64, metavar='N',
                    help='Validation batch size override (default: None)')
 group.add_argument('--channels-last', action='store_true', default=False,
                    help='Use channels_last memory layout')
@@ -123,7 +128,7 @@ group.add_argument('--device-modules', default=None, type=str, nargs='+',
 
 # Optimizer parameters
 group = parser.add_argument_group('Optimizer parameters')
-group.add_argument('--opt', default='sgd', type=str, metavar='OPTIMIZER',
+group.add_argument('--opt', default='adam', type=str, metavar='OPTIMIZER',
                    help='Optimizer (default: "sgd")')
 group.add_argument('--opt-eps', default=None, type=float, metavar='EPSILON',
                    help='Optimizer Epsilon (default: None, use opt default)')
@@ -301,7 +306,7 @@ group.add_argument('--log-interval', type=int, default=50, metavar='N',
                    help='how many batches to wait before logging training status')
 group.add_argument('--recovery-interval', type=int, default=0, metavar='N',
                    help='how many batches to wait before writing recovery checkpoint')
-group.add_argument('--checkpoint-hist', type=int, default=10, metavar='N',
+group.add_argument('--checkpoint-hist', type=int, default=4, metavar='N',
                    help='number of checkpoints to keep (default: 10)')
 group.add_argument('-j', '--workers', type=int, default=4, metavar='N',
                    help='how many training processes to use (default: 4)')
