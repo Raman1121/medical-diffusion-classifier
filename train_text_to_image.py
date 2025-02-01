@@ -41,7 +41,7 @@ from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
 
 from parse_args import parse_args_training
-from data import RetinalFundusDataset
+from data import RetinalFundusDataset, MimicCXRDataset
 
 
 if is_wandb_available():
@@ -339,10 +339,6 @@ def main():
     assert args.train_csv is not None
     assert args.test_csv is not None
 
-    train_csv = pd.read_csv(args.train_csv)
-    test_csv = pd.read_csv(args.test_csv)
-    args.validation_prompts = test_csv[args.caption_column].tolist()[0:20]      # Selecting only 20 images for validation
-
     train_transforms = transforms.Compose(
         [
             transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
@@ -364,6 +360,8 @@ def main():
 
     assert args.dataset_name is not None
     if(args.dataset_name == 'fundus'):
+        train_csv = pd.read_csv(args.train_csv)
+        test_csv = pd.read_csv(args.test_csv)
         train_dataset = RetinalFundusDataset(
             train_csv,
             tokenizer=tokenizer,
@@ -380,8 +378,34 @@ def main():
             img_path_key=args.image_column,
             caption_col_key=args.caption_column,
         )
+        args.validation_prompts = test_csv[args.caption_column].tolist()[0:20]      # Selecting only 20 images for validation
+    
+    elif(args.dataset_name == 'mimic'):
+        IMG_DIR = "/raid/s2198939/MIMIC_Dataset/physionet.org/files/mimic-cxr-jpg/2.0.0"
+        
+        train_df = pd.read_excel(args.train_csv)
+        train_df['path'] = train_df['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+        train_dataset = MimicCXRDataset(
+            train_df,
+            tokenizer=tokenizer,
+            transform=train_transforms,
+            seed=args.seed
+        )
+
+        test_df = pd.read_excel(args.test_csv)
+        test_df['path'] = test_df['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+        test_dataset = MimicCXRDataset(
+            test_df,
+            tokenizer=tokenizer,
+            transform=test_transforms,
+            seed=args.seed
+        )
+        args.validation_prompts = test_df[args.caption_column].tolist()[0:20]      # Selecting only 20 images for validation
+
     else:
         raise NotImplementedError(f"Dataset {args.dataset_name} not implemented")
+    
+    
 
     # DataLoader creation
     train_dataloader = torch.utils.data.DataLoader(
