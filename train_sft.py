@@ -44,7 +44,7 @@ from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.utils import ApexScaler, NativeScaler
 
-from sft_data import RetinalFundusDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT
 from parse_args.parse_args_sft import _parse_args
 
 try:
