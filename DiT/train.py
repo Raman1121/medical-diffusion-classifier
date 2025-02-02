@@ -264,7 +264,19 @@ def main(args):
 
             # Save DiT checkpoint:
             if train_steps % args.ckpt_every == 0 and train_steps > 0:
+
                 if rank == 0:
+                    # Check checkpoint limit:
+                    num_saved_ckpts = len(glob(f"{checkpoint_dir}/*.pt"))
+                    
+                    if num_saved_ckpts >= args.ckpt_limit:
+                        # Remove oldest checkpoint:
+                        ckpt_paths = glob(f"{checkpoint_dir}/*.pt")
+                        ckpt_steps = [int(path.split("/")[-1].split(".")[0]) for path in ckpt_paths]
+                        oldest_ckpt = ckpt_paths[np.argmin(ckpt_steps)]
+                        os.remove(oldest_ckpt)
+                        logger.info(f"Removed oldest checkpoint: {oldest_ckpt}")
+                
                     checkpoint = {
                         "model": model.module.state_dict(),
                         "ema": ema.state_dict(),
@@ -301,5 +313,6 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
+    parser.add_argument("--ckpt-limit", type=int, default=5)
     args = parser.parse_args()
     main(args)
