@@ -39,7 +39,7 @@ from open_clip_train.scheduler import cosine_lr, const_lr, const_lr_cooldown
 from open_clip_train.train import train_one_epoch, evaluate
 from open_clip_train.file_utils import pt_load, check_exists, start_sync_process, remote_sync
 
-from parse_args_clip import parse_args
+from parse_args.parse_args_clip import parse_args
 
 
 LATEST_CHECKPOINT_NAME = "epoch_latest.pt"

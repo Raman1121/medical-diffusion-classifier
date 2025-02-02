@@ -45,7 +45,7 @@ from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.utils import ApexScaler, NativeScaler
 
 from sft_data import RetinalFundusDatasetSFT
-from parse_args_sft import _parse_args
+from parse_args.parse_args_sft import _parse_args
 
 try:
     from apex import amp

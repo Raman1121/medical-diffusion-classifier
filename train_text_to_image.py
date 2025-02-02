@@ -40,7 +40,7 @@ from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
 
-from parse_args_t2i import parse_args_training
+from parse_args.parse_args_t2i import parse_args_training
 from t2i_data import RetinalFundusDataset, MimicCXRDataset
 
 
