@@ -1,3 +1,5 @@
 OUTPUT/*
 OUTPUT_SFT/*
 OUTPUT_CLIP/*
+OUTPUT_MIMIC/*
+__pycache__/*
