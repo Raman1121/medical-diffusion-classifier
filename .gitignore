@@ -3,3 +3,4 @@ OUTPUT_SFT/*
 OUTPUT_CLIP/*
 OUTPUT_MIMIC/*
 __pycache__/*
+preprocess_data.py
