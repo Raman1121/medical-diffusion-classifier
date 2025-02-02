@@ -7,6 +7,7 @@
 """
 A minimal training script for DiT using PyTorch DDP.
 """
+import sys
 import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -26,10 +27,17 @@ from time import time
 import argparse
 import logging
 import os
+import pandas as pd
+from .download import find_model
 
-from models import DiT_models
-from diffusion import create_diffusion
+from .models import DiT_models
+from .diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
+
+# project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# sys.path.append(project_root)
+
+from data.sft_data import RetinalFundusDatasetSFT
 
 
 #################################################################################
@@ -123,6 +131,11 @@ def main(args):
     torch.cuda.set_device(device)
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
+    MODEL_NAME_PATH_DICT = {
+        "DiT-XL2_512": "DiT/Pretrained_Models/DiT-XL-2-512x512.pt",
+        "DiT-XL2_256": "DiT/Pretrained_Models/DiT-XL-2-256x256.pt",
+    }
+
     # Setup an experiment folder:
     if rank == 0:
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
@@ -143,6 +156,20 @@ def main(args):
         input_size=latent_size,
         num_classes=args.num_classes
     )
+
+    # TODO: Load state_dict from a checkpoint
+    # ckpt_path = f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
+
+    # if(args.image_size == 256):
+    #     ckpt_path = MODEL_NAME_PATH_DICT["DiT-XL2_256"]
+    # elif(args.image_size == 512):
+    #     ckpt_path = MODEL_NAME_PATH_DICT["DiT-XL2_512"]
+    # else:
+    #     raise ValueError(f"Unknown image size: {args.image_size}")
+    
+    # state_dict = find_model(ckpt_path)
+    # model.load_state_dict(state_dict, strict=False)
+
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
@@ -161,14 +188,20 @@ def main(args):
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
     ])
-    dataset = ImageFolder(args.data_path, transform=transform)
-    sampler = DistributedSampler(
-        dataset,
-        num_replicas=dist.get_world_size(),
-        rank=rank,
-        shuffle=True,
-        seed=args.global_seed
-    )
+    # dataset = ImageFolder(args.data_path, transform=transform)
+    if(args.dataset == 'fundus'):
+        train_df = pd.read_csv(args.train_csv)
+        dataset = RetinalFundusDatasetSFT(train_df, transform=transform)
+        sampler = DistributedSampler(
+            dataset,
+            num_replicas=dist.get_world_size(),
+            rank=rank,
+            shuffle=True,
+            seed=args.global_seed
+        )
+    else:
+        raise ValueError(f"Unknown dataset: {args.dataset}")
+    
     loader = DataLoader(
         dataset,
         batch_size=int(args.global_batch_size // dist.get_world_size()),
@@ -253,8 +286,11 @@ def main(args):
 if __name__ == "__main__":
     # Default args here will train DiT-XL/2 with the hyperparameters we used in our paper (except training iters).
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--results-dir", type=str, default="results")
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--train_csv", type=str, required=True)
+    parser.add_argument("--test_csv", type=str, required=True)
+    parser.add_argument("--data-path", type=str, required=False)
+    parser.add_argument("--results-dir", type=str, default="DiT_results")
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
     parser.add_argument("--num-classes", type=int, default=1000)
@@ -263,7 +299,7 @@ if __name__ == "__main__":
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--log-every", type=int, default=100)
+    parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
     args = parser.parse_args()
     main(args)

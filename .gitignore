@@ -2,5 +2,9 @@ OUTPUT/*
 OUTPUT_SFT/*
 OUTPUT_CLIP/*
 OUTPUT_MIMIC/*
+OUTPUT_CCND/*
 __pycache__/*
+*/__pycache__/*
+*/*/__pycache__/*
 preprocess_data.py
+DiT/Pretrained_Models/*

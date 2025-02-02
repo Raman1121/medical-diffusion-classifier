@@ -33,4 +33,4 @@ class RetinalFundusDatasetSFT(torch.utils.data.Dataset):
         if self.transform:
             im = self.transform(im)
 
-        return im, self.df[self.diagnosis_col_key].iloc[idx]
+        return im, torch.tensor(self.df[self.diagnosis_col_key].iloc[idx])
