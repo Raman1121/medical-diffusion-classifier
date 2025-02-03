@@ -14,23 +14,25 @@ MODEL_IDS = {
 
 
 def get_sd_model(args):
-    if args.dtype == 'float32':
-        dtype = torch.float32
-    elif args.dtype == 'float16':
-        dtype = torch.float16
-    else:
-        raise NotImplementedError
+    # if args.dtype == 'float32':
+    #     dtype = torch.float32
+    # elif args.dtype == 'float16':
+    #     dtype = torch.float16
+    # else:
+    #     raise NotImplementedError
 
-    assert args.version in MODEL_IDS.keys()
-    model_id = MODEL_IDS[args.version]
+    # assert args.version in MODEL_IDS.keys()
+    model_id = args.pretrained_model_name_or_path
     scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=dtype)
+    pipe = StableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler)
     pipe.enable_xformers_memory_efficient_attention()
     vae = pipe.vae
     tokenizer = pipe.tokenizer
     text_encoder = pipe.text_encoder
     unet = pipe.unet
-    return vae, tokenizer, text_encoder, unet, scheduler
+    dtype = pipe.dtype
+
+    return vae, tokenizer, text_encoder, unet, scheduler, dtype
 
 
 def get_scheduler_config(args):

@@ -7,7 +7,7 @@ from torchvision import datasets
 from diffusion.utils import DATASET_ROOT, get_classes_templates
 from diffusion.dataset.objectnet import ObjectNetBase
 from diffusion.dataset.imagenet_classnames import get_classnames
-from imagenetv2_pytorch import ImageNetV2Dataset
+# from imagenetv2_pytorch import ImageNetV2Dataset
 from PIL import Image
 
 IMAGENET_A_CLASSES = [
@@ -41,17 +41,17 @@ class MNIST(datasets.MNIST):
     class_to_idx = {str(i): i for i in range(10)}
 
 
-class ImageNetV2(ImageNetV2Dataset):
-    def __init__(
-            self,
-            variant="matched-frequency",
-            root=DATASET_ROOT,
-            transform=None,
-    ):
-        super(ImageNetV2, self).__init__(variant=variant,
-                                         location=root,
-                                         transform=transform)
-        self.fnames.sort()
+# class ImageNetV2(ImageNetV2Dataset):
+#     def __init__(
+#             self,
+#             variant="matched-frequency",
+#             root=DATASET_ROOT,
+#             transform=None,
+#     ):
+#         super(ImageNetV2, self).__init__(variant=variant,
+#                                          location=root,
+#                                          transform=transform)
+#         self.fnames.sort()
 
 
 class ImageNetA(torch.utils.data.Dataset):
@@ -154,11 +154,11 @@ def get_target_dataset(name: str, train=False, transform=None, target_transform=
         dataset = base.get_test_dataset()
         dataset.class_to_idx = dataset.label_map
         dataset.file_to_class = None  # todo
-    elif name == 'imagenetv2':
-        assert not train
-        dataset = ImageNetV2(root=DATASET_ROOT, transform=transform)
-        dataset.file_to_class = None
-        dataset.class_to_idx = None
+    # elif name == 'imagenetv2':
+    #     assert not train
+    #     dataset = ImageNetV2(root=DATASET_ROOT, transform=transform)
+    #     dataset.file_to_class = None
+    #     dataset.class_to_idx = None
     elif name == 'imagenetA':
         dataset = ImageNetA(root=DATASET_ROOT, transform=transform)
         dataset.file_to_class = None

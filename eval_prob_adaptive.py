@@ -12,6 +12,8 @@ from diffusion.utils import LOG_DIR, get_formatstr
 import torchvision.transforms as torch_transforms
 from torchvision.transforms.functional import InterpolationMode
 
+from data.sft_data import RetinalFundusDatasetSFT
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 INTERPOLATIONS = {
@@ -42,7 +44,8 @@ def center_crop_resize(img, interpolation=InterpolationMode.BILINEAR):
 
 
 def eval_prob_adaptive(unet, latent, text_embeds, scheduler, args, latent_size=64, all_noise=None):
-    scheduler_config = get_scheduler_config(args)
+    # scheduler_config = get_scheduler_config(args)
+    scheduler_config = scheduler.config
     T = scheduler_config['num_train_timesteps']
     max_n_samples = max(args.n_samples)
 
@@ -125,25 +128,36 @@ def eval_error(unet, scheduler, latent, all_noise, ts, noise_idxs,
 def main():
     parser = argparse.ArgumentParser()
 
+    # SD Model args
+    parser.add_argument(
+        "--pretrained_model_name_or_path",
+        type=str,
+        default=None,
+        required=True,
+        help="Path to pretrained model or model identifier from huggingface.co/models.",
+    )
+
     # dataset args
-    parser.add_argument('--dataset', type=str, default='pets',
-                        choices=['pets', 'flowers', 'stl10', 'mnist', 'cifar10', 'food', 'caltech101', 'imagenet',
-                                 'objectnet', 'aircraft'], help='Dataset to use')
+    parser.add_argument('--dataset', type=str, default=None,
+                        choices=['fundus'], help='Dataset to use')
     parser.add_argument('--split', type=str, default='train', choices=['train', 'test'], help='Name of split')
+    parser.add_argument('--max_samples', type=int, default=None, help='Max number of samples to use for eval.')
+    parser.add_argument('--label_key', type=str, default='Unhealthy', help='Col name that indicates label in the csv file')
 
     # run args
-    parser.add_argument('--version', type=str, default='2-0', help='Stable Diffusion model version')
+    parser.add_argument('--version', type=str, default='1-4', help='Stable Diffusion model version')
     parser.add_argument('--img_size', type=int, default=512, choices=(256, 512), help='Number of trials per timestep')
     parser.add_argument('--batch_size', '-b', type=int, default=32)
     parser.add_argument('--n_trials', type=int, default=1, help='Number of trials per timestep')
     parser.add_argument('--prompt_path', type=str, required=True, help='Path to csv file with prompts to use')
+    parser.add_argument('--prompt_key', type=str, required=True, default='Text', help='Key indicating prompts in the csv file with the prompts')
     parser.add_argument('--noise_path', type=str, default=None, help='Path to shared noise to use')
     parser.add_argument('--subset_path', type=str, default=None, help='Path to subset of images to evaluate')
-    parser.add_argument('--dtype', type=str, default='float16', choices=('float16', 'float32'),
+    parser.add_argument('--dtype', type=str, default=None, choices=('float16', 'float32'),
                         help='Model data type to use')
     parser.add_argument('--interpolation', type=str, default='bicubic', help='Resize interpolation type')
     parser.add_argument('--extra', type=str, default=None, help='To append to the run folder name')
-    parser.add_argument('--n_workers', type=int, default=1, help='Number of workers to split the dataset across')
+    parser.add_argument('--n_workers', type=int, default=8, help='Number of workers to split the dataset across')
     parser.add_argument('--worker_idx', type=int, default=0, help='Index of worker to use')
     parser.add_argument('--load_stats', action='store_true', help='Load saved stats to compute acc')
     parser.add_argument('--loss', type=str, default='l2', choices=('l1', 'l2', 'huber'), help='Type of loss to use')
@@ -178,15 +192,23 @@ def main():
     interpolation = INTERPOLATIONS[args.interpolation]
     transform = get_transform(interpolation, args.img_size)
     latent_size = args.img_size // 8
-    target_dataset = get_target_dataset(args.dataset, train=args.split == 'train', transform=transform)
+
+    # TODO: Modify this for your dataset (fundus, mimic, etc)
+    # target_dataset = get_target_dataset(args.dataset, train=args.split == 'train', transform=transform)
     prompts_df = pd.read_csv(args.prompt_path)
+    if(args.max_samples is not None):
+        prompts_df = prompts_df.sample(n=args.max_samples).reset_index(drop=True)
+
+    target_dataset = RetinalFundusDatasetSFT(prompts_df, transform=transform)
 
     # load pretrained models
-    vae, tokenizer, text_encoder, unet, scheduler = get_sd_model(args)
+    vae, tokenizer, text_encoder, unet, scheduler, dtype = get_sd_model(args)
     vae = vae.to(device)
     text_encoder = text_encoder.to(device)
     unet = unet.to(device)
     torch.backends.cudnn.benchmark = True
+
+    args.dtype = dtype
 
     # load noise
     if args.noise_path is not None:
@@ -197,7 +219,7 @@ def main():
         all_noise = None
 
     # refer to https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L276
-    text_input = tokenizer(prompts_df.prompt.tolist(), padding="max_length",
+    text_input = tokenizer(prompts_df[args.prompt_key].tolist(), padding="max_length",
                            max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")
     embeddings = []
     with torch.inference_mode():
@@ -239,7 +261,7 @@ def main():
             x0 = vae.encode(img_input).latent_dist.mean
             x0 *= 0.18215
         pred_idx, pred_errors = eval_prob_adaptive(unet, x0, text_embeddings, scheduler, args, latent_size, all_noise)
-        pred = prompts_df.classidx[pred_idx]
+        pred = prompts_df[args.label_key][pred_idx]
         torch.save(dict(errors=pred_errors, pred=pred, label=label), fname)
         if pred == label:
             correct += 1

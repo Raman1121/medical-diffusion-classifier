@@ -28,7 +28,7 @@ class RetinalFundusDatasetSFT(torch.utils.data.Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        img_path = self.df[self.img_path_key].iloc[idx]
+        img_path = self.df[self.img_path_key][idx]
         im = Image.open(img_path).convert("RGB")
         if self.transform:
             im = self.transform(im)

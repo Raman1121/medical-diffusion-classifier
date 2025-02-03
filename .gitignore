@@ -8,3 +8,4 @@ __pycache__/*
 */*/__pycache__/*
 preprocess_data.py
 DiT/Pretrained_Models/*
+RESULTS/*

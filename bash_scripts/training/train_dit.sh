@@ -7,8 +7,8 @@ TEST_CSV="/raid/s2198939/Fundus_Images/In-Distribution-Splits/test.csv"
 DATASET='fundus'
 NUM_CLASSES=2
 
-BATCH_SIZE=32
-EPOCHS=60
+BATCH_SIZE=20
+EPOCHS=50
 RESOLUTION=512
 
 OUTPUT_DIR="OUTPUT_CCND"
@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES torchrun --nnodes=1 --nproc_per_node=
                                             --image-size $RESOLUTION \
                                             --num-classes=$NUM_CLASSES \
                                             --epochs=$EPOCHS \
-                                            --ckpt-every 500 \
+                                            --ckpt-every 2000 \
                                             --global-batch-size=$BATCH_SIZE \
 
 

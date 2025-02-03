@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 DATASET_ROOT = os.getenv('DATASET_ROOT', '/datasets')
-LOG_DIR = os.getenv('LOG_DIR', 'data')
+LOG_DIR = os.getenv('LOG_DIR', 'RESULTS/T2I_classification_results')
 TOKEN_PATH = os.getenv('TOKEN_PATH', osp.expanduser('~/hf_token.txt'))
 HDD_ROOT = os.getenv('HDD_ROOT', '')  # should point to the HDD path on each machine
 # it is stored in the current directory
