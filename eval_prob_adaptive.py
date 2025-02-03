@@ -197,7 +197,7 @@ def main():
     # target_dataset = get_target_dataset(args.dataset, train=args.split == 'train', transform=transform)
     prompts_df = pd.read_csv(args.prompt_path)
     if(args.max_samples is not None):
-        prompts_df = prompts_df.sample(n=args.max_samples).reset_index(drop=True)
+        prompts_df = prompts_df.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
 
     target_dataset = RetinalFundusDatasetSFT(prompts_df, transform=transform)
 
