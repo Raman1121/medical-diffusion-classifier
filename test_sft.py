@@ -153,6 +153,8 @@ scripting_group.add_argument('--torchcompile', nargs='?', type=str, default=None
 scripting_group.add_argument('--aot-autograd', default=False, action='store_true',
                              help="Enable AOT Autograd support.")
 
+parser.add_argument('--results-dir', default=None, type=str, metavar='FILENAME',
+                    help='Directory to store the results.')
 parser.add_argument('--results-file', default='', type=str, metavar='FILENAME',
                     help='Output csv file for validation results (summary)')
 parser.add_argument('--results-format', default='csv', type=str,
@@ -503,7 +505,12 @@ def main():
             results = validate(args)
 
     if args.results_file:
-        write_results(args.results_file, results, format=args.results_format)
+        try:
+            os.makedirs(args.results_dir, exist_ok=True)
+        except:
+            import pdb; pdb.set_trace()
+        write_results(os.path.join(args.results_dir, args.dataset + "_" + args.results_file), results, format=args.results_format)
+        print(f'--results-file\n{os.path.join(args.results_dir, args.results_file)}')
 
     # output results in JSON to stdout w/ delimiter for runner script
     print(f'--result\n{json.dumps(results, indent=4)}')
