@@ -32,7 +32,7 @@ from timm.models import create_model, load_checkpoint, is_model, list_models
 from timm.utils import accuracy, AverageMeter, natural_key, setup_default_logging, set_jit_fuser, \
     decay_batch_step, check_batch_size_retry, ParseKwargs, reparameterize_model
 
-from data.sft_data import RetinalFundusDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT
 
 try:
     from apex import amp
@@ -170,6 +170,8 @@ parser.add_argument('--test_csv', default=None, required=True, type=str,
                     help='path to test csv file')
 parser.add_argument('--seed', default=42, type=int,
                     help='seed for experiments')
+parser.add_argument('--max_samples', default=None, type=int,
+                    help='Max number of samples to use for evaluation')
 
 
 def validate(args):
@@ -296,7 +298,15 @@ def validate(args):
 
     assert args.test_csv is not None
 
-    test_csv = pd.read_csv(args.test_csv)
+    try:
+        test_csv = pd.read_csv(args.test_csv)
+    except:
+        test_csv = pd.read_excel(args.test_csv)
+
+    if(args.max_samples is not None):
+        print("Sampling ", args.max_samples, " samples")
+        test_csv = test_csv.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
+
     if(args.dataset == 'fundus'):
         dataset = RetinalFundusDatasetSFT(
                 df=test_csv,
@@ -305,6 +315,8 @@ def validate(args):
                 img_path_key='path',
                 diagnosis_col_key='Unhealthy',
             )
+    elif(args.dataset == 'mimic'):
+        dataset = MimicCXRDatasetSFT(test_csv, transform=None)
     else:
         raise NotImplementedError(f"Dataset {args.dataset} not implemented")
 

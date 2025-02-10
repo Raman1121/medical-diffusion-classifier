@@ -44,7 +44,7 @@ from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.utils import ApexScaler, NativeScaler
 
-from data.sft_data import RetinalFundusDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT
 from parse_args.parse_args_sft import _parse_args
 
 try:
@@ -332,15 +332,34 @@ def main():
     assert args.train_csv is not None
     assert args.test_csv is not None
 
-    train_csv = pd.read_csv(args.train_csv)
-    test_csv = pd.read_csv(args.test_csv)
+    try:
+        train_csv = pd.read_csv(args.train_csv)
+        test_csv = pd.read_csv(args.test_csv)
+    except:
+        train_csv = pd.read_excel(args.train_csv)
+        test_csv = pd.read_excel(args.test_csv)
 
     if(args.train_num_samples is not None):
         print("Sampling {} samples from training set".format(args.train_num_samples))
         train_csv = train_csv.sample(args.train_num_samples).reset_index(drop=True)
 
+    if(args.val_num_samples is not None):
+        print("Sampling {} samples from validation set".format(args.val_num_samples))
+        test_csv = test_csv.sample(args.val_num_samples).reset_index(drop=True)
+
     if(args.dataset == 'fundus'):
         dataset_train = RetinalFundusDatasetSFT(
+            df=train_csv,
+            transform=None,
+            seed=args.seed,
+            img_path_key='path',
+            diagnosis_col_key='Unhealthy',
+        )
+    elif(args.dataset == 'mimic'):
+        IMG_DIR = "/raid/s2198939/MIMIC_Dataset/physionet.org/files/mimic-cxr-jpg/2.0.0"
+        train_csv['path'] = train_csv['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+        test_csv['path'] = test_csv['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+        dataset_train = MimicCXRDatasetSFT(
             df=train_csv,
             transform=None,
             seed=args.seed,
@@ -367,6 +386,14 @@ def main():
         # )
         if(args.dataset == 'fundus'):
             dataset_eval = RetinalFundusDatasetSFT(
+                df=test_csv,
+                transform=None,
+                seed=args.seed,
+                img_path_key='path',
+                diagnosis_col_key='Unhealthy',
+            )
+        elif(args.dataset == 'mimic'):
+            dataset_eval = MimicCXRDatasetSFT(
                 df=test_csv,
                 transform=None,
                 seed=args.seed,
@@ -507,6 +534,8 @@ def main():
                 safe_model_name(args.model),
                 str(data_config['input_size'][-1])
             ])
+        if(args.output is not None):
+            args.output = os.path.join(args.output, args.dataset)
         output_dir = utils.get_outdir(args.output if args.output else './output/train', exp_name)
         saver = utils.CheckpointSaver(
             model=model,

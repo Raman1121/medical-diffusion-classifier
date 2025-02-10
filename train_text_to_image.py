@@ -32,13 +32,15 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from transformers.utils import ContextManagers
 
 import diffusers
-from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel
+from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel, DDIMScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel, compute_dream_and_update_latents, compute_snr
 from diffusers.utils import check_min_version, deprecate, is_wandb_available, make_image_grid
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
+
+from transformers import AutoModel, AutoTokenizer
 
 from parse_args.parse_args_t2i import parse_args_training
 from data.t2i_data import RetinalFundusDataset, MimicCXRDataset
@@ -118,6 +120,7 @@ def main():
         "CompVis/stable-diffusion-v1-4": "SD-V1-4",
         "stabilityai/stable-diffusion-2": "SD-V2",
         "Efficient-Large-Model/Sana_600M_512px_diffusers": "Sana_600M",
+        "radedit": "radedit"
     }
 
     if args.report_to == "wandb" and args.hub_token is not None:
@@ -186,10 +189,24 @@ def main():
             ).repo_id
 
     # Load scheduler, tokenizer and models.
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
-    tokenizer = CLIPTokenizer.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
-    )
+    if(args.pretrained_model_name_or_path == 'radedit'):
+        noise_scheduler = DDIMScheduler(
+                beta_schedule="linear",
+                clip_sample=False,
+                prediction_type="epsilon",
+                timestep_spacing="trailing",
+                steps_offset=1,
+            )
+        tokenizer = AutoTokenizer.from_pretrained(
+                "microsoft/BiomedVLP-BioViL-T",
+                model_max_length=128,
+                trust_remote_code=True,
+            )
+    else:
+        noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
+        tokenizer = CLIPTokenizer.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
+        )
 
     def deepspeed_zero_init_disabled_context_manager():
         """
@@ -201,26 +218,27 @@ def main():
 
         return [deepspeed_plugin.zero3_init_context_manager(enable=False)]
 
-    # Currently Accelerate doesn't know how to handle multiple models under Deepspeed ZeRO stage 3.
-    # For this to work properly all models must be run through `accelerate.prepare`. But accelerate
-    # will try to assign the same optimizer with the same weights to all models during
-    # `deepspeed.initialize`, which of course doesn't work.
-    #
-    # For now the following workaround will partially support Deepspeed ZeRO-3, by excluding the 2
-    # frozen models from being partitioned during `zero.Init` which gets called during
-    # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
-    # across multiple gpus and only UNet2DConditionModel will get ZeRO sharded.
     with ContextManagers(deepspeed_zero_init_disabled_context_manager()):
-        text_encoder = CLIPTextModel.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, variant=args.variant
-        )
-        vae = AutoencoderKL.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision, variant=args.variant
-        )
+        if(args.pretrained_model_name_or_path == 'radedit'):
+            text_encoder = AutoModel.from_pretrained(
+                "microsoft/BiomedVLP-BioViL-T",
+                trust_remote_code=True,
+            )
+            vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae")
+        else:
+            text_encoder = CLIPTextModel.from_pretrained(
+                args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, variant=args.variant
+            )
+            vae = AutoencoderKL.from_pretrained(
+                args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision, variant=args.variant
+            )
 
-    unet = UNet2DConditionModel.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision
-    )
+    if(args.pretrained_model_name_or_path == 'radedit'):
+        unet = UNet2DConditionModel.from_pretrained("microsoft/radedit", subfolder="unet")
+    else:
+        unet = UNet2DConditionModel.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision
+        )
 
     # Freeze vae and text_encoder and set unet to trainable
     vae.requires_grad_(False)

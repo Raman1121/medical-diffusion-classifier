@@ -2,8 +2,8 @@ source /raid/s2198939/miniconda3/bin/activate demm
 
 cd /raid/s2198939/medical-diffusion-classifier
 
-TEST_CSV="/raid/s2198939/MIMIC_Dataset/physionet.org/files/mimic-cxr-jpg/2.0.0/Prepared_CSVs/FINAL_TEST.xlsx"
-DATASET='mimic'
+TEST_CSV="/raid/s2198939/Fundus_Images/In-Distribution-Splits/test_balanced.csv"
+DATASET='fundus'
 MODEL="resnet50"
 NUM_CLASSES=2
 RESULTS_DIR="/raid/s2198939/medical-diffusion-classifier/RESULTS/SFT_RESULTS"

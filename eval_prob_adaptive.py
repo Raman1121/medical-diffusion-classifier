@@ -12,7 +12,7 @@ from diffusion.utils import LOG_DIR, get_formatstr
 import torchvision.transforms as torch_transforms
 from torchvision.transforms.functional import InterpolationMode
 
-from data.sft_data import RetinalFundusDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -139,7 +139,7 @@ def main():
 
     # dataset args
     parser.add_argument('--dataset', type=str, default=None,
-                        choices=['fundus'], help='Dataset to use')
+                        choices=['fundus', 'mimic'], help='Dataset to use')
     parser.add_argument('--split', type=str, default='train', choices=['train', 'test'], help='Name of split')
     parser.add_argument('--max_samples', type=int, default=None, help='Max number of samples to use for eval.')
     parser.add_argument('--label_key', type=str, default='Unhealthy', help='Col name that indicates label in the csv file')
@@ -195,11 +195,24 @@ def main():
 
     # TODO: Modify this for your dataset (fundus, mimic, etc)
     # target_dataset = get_target_dataset(args.dataset, train=args.split == 'train', transform=transform)
-    prompts_df = pd.read_csv(args.prompt_path)
+
+    try:
+        prompts_df = pd.read_csv(args.prompt_path)
+    except:
+        prompts_df = pd.read_excel(args.prompt_path)
+    
     if(args.max_samples is not None):
+        print("Sampling ", args.max_samples, " samples")
         prompts_df = prompts_df.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
 
-    target_dataset = RetinalFundusDatasetSFT(prompts_df, transform=transform)
+    if(args.dataset == 'fundus'):
+        target_dataset = RetinalFundusDatasetSFT(prompts_df, transform=transform)
+    elif(args.dataset == 'mimic'):
+        IMG_DIR = "/raid/s2198939/MIMIC_Dataset/physionet.org/files/mimic-cxr-jpg/2.0.0"
+        prompts_df['path'] = prompts_df['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+        target_dataset = MimicCXRDatasetSFT(prompts_df, transform=transform)
+    else:
+        raise NotImplementedError(f'Dataset {args.dataset} not implemented')
 
     # load pretrained models
     vae, tokenizer, text_encoder, unet, scheduler, dtype = get_sd_model(args)
@@ -224,9 +237,17 @@ def main():
     embeddings = []
     with torch.inference_mode():
         for i in range(0, len(text_input.input_ids), 100):
-            text_embeddings = text_encoder(
-                text_input.input_ids[i: i + 100].to(device),
-            )[0]
+            if(args.dataset == 'mimic'):
+                # We are using the CXRBertModel while using RadEdit for MIMIC which requires attention_mask
+                text_embeddings = text_encoder(
+                    text_input.input_ids[i: i + 100].to(device),
+                    attention_mask=text_input.attention_mask[i: i + 100].to(device)
+                )[0]
+                
+            else:
+                text_embeddings = text_encoder(
+                    text_input.input_ids[i: i + 100].to(device),
+                )[0]
             embeddings.append(text_embeddings)
     text_embeddings = torch.cat(embeddings, dim=0)
     assert len(text_embeddings) == len(prompts_df)
@@ -241,6 +262,7 @@ def main():
     formatstr = get_formatstr(len(target_dataset) - 1)
     correct = 0
     total = 0
+    
     pbar = tqdm.tqdm(idxs_to_eval)
     for i in pbar:
         if total > 0:
@@ -265,6 +287,7 @@ def main():
         torch.save(dict(errors=pred_errors, pred=pred, label=label), fname)
         if pred == label:
             correct += 1
+
         total += 1
 
 

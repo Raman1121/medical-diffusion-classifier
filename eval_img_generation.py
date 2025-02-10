@@ -106,7 +106,7 @@ def main():
     prompts = prompts_df[args.prompt_key].tolist()
 
     # Generate images
-    image_paths, _ = generate_images(pipeline, prompts_df, prompts, args.output_dir, device)
+    image_paths = generate_images(pipeline, prompts_df, prompts, args.output_dir, device)
     real_img_paths = prompts_df["path"].tolist()
 
     # Load images as tensors
@@ -130,3 +130,7 @@ def main():
     
 if __name__ == "__main__":
     main()
+
+'''
+Command: CUDA_VISIBLE_DEVICES=3 python eval_img_generation.py --test_csv /raid/s2198939/Fundus_Images/In-Distribution-Splits/test_balanced.csv --model_name <model_path>
+'''
