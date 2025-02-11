@@ -63,6 +63,7 @@ class MimicCXRDatasetSFT(torch.utils.data.Dataset):
 
         img_path = self.df[self.img_path_key][idx]
         im = Image.open(img_path).convert("RGB")
+        # im = Image.open(img_path)
         if self.transform:
             im = self.transform(im)
 

@@ -196,21 +196,43 @@ def main():
     # TODO: Modify this for your dataset (fundus, mimic, etc)
     # target_dataset = get_target_dataset(args.dataset, train=args.split == 'train', transform=transform)
 
-    try:
-        prompts_df = pd.read_csv(args.prompt_path)
-    except:
-        prompts_df = pd.read_excel(args.prompt_path)
+    print("DATASET: ", args.dataset)
     
-    if(args.max_samples is not None):
-        print("Sampling ", args.max_samples, " samples")
-        prompts_df = prompts_df.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
-
     if(args.dataset == 'fundus'):
-        target_dataset = RetinalFundusDatasetSFT(prompts_df, transform=transform)
+        prompts_df = pd.read_csv(args.prompt_path)
+        print("Length of original CSV: ", len(prompts_df))
+
+        if(args.max_samples is not None):
+            print("Sampling ", args.max_samples, " samples",)
+            prompts_df = prompts_df.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
+        print(len(prompts_df))
+
+        target_dataset = RetinalFundusDatasetSFT(
+                                        prompts_df, 
+                                        transform=transform,
+                                        img_path_key='path',
+                                        diagnosis_col_key=args.label_key
+                                        )
     elif(args.dataset == 'mimic'):
-        IMG_DIR = "/raid/s2198939/MIMIC_Dataset/physionet.org/files/mimic-cxr-jpg/2.0.0"
-        prompts_df['path'] = prompts_df['path'].apply(lambda x: os.path.join(IMG_DIR, x))
-        target_dataset = MimicCXRDatasetSFT(prompts_df, transform=transform)
+        prompts_df = pd.read_excel(args.prompt_path)
+        print("Length of original CSV: ", len(prompts_df))
+
+        # Commenting out the following lines since the CSV already contains the full path
+        
+        # IMG_DIR = "/raid/s2198939/MIMIC_Dataset/physionet.org/files/mimic-cxr-jpg/2.0.0"
+        # prompts_df['path'] = prompts_df['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+
+        if(args.max_samples is not None):
+            print("Sampling ", args.max_samples, " samples",)
+            prompts_df = prompts_df.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
+        print(len(prompts_df))
+
+        target_dataset = MimicCXRDatasetSFT(
+                                            prompts_df, 
+                                            transform=transform,
+                                            img_path_key='path',
+                                            diagnosis_col_key=args.label_key
+                                            )
     else:
         raise NotImplementedError(f'Dataset {args.dataset} not implemented')
 
@@ -232,8 +254,9 @@ def main():
         all_noise = None
 
     # refer to https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L276
+    
     text_input = tokenizer(prompts_df[args.prompt_key].tolist(), padding="max_length",
-                           max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")
+                        max_length=tokenizer.model_max_length, truncation=True, return_tensors="pt")
     embeddings = []
     with torch.inference_mode():
         for i in range(0, len(text_input.input_ids), 100):

@@ -1,9 +1,11 @@
 # Source: https://github.com/huggingface/diffusers/blob/main/examples/text_to_image/train_text_to_image.py
+import os
+# Set env variable TOKENIZERS_PARALLELISM to false
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import argparse
 import logging
 import math
-import os
 import random
 import shutil
 import pandas as pd
@@ -51,20 +53,32 @@ if is_wandb_available():
 
 logger = get_logger(__name__, log_level="INFO")
 
-def log_validation(vae, text_encoder, tokenizer, unet, args, accelerator, weight_dtype, epoch):
+def log_validation(vae, text_encoder, tokenizer, unet, args, accelerator, weight_dtype, epoch, scheduler):
     logger.info("Running validation... ")
 
-    pipeline = StableDiffusionPipeline.from_pretrained(
-        args.pretrained_model_name_or_path,
-        vae=accelerator.unwrap_model(vae),
-        text_encoder=accelerator.unwrap_model(text_encoder),
-        tokenizer=tokenizer,
-        unet=accelerator.unwrap_model(unet),
-        safety_checker=None,
-        revision=args.revision,
-        variant=args.variant,
-        torch_dtype=weight_dtype,
-    )
+    if(args.pretrained_model_name_or_path == 'radedit'):
+        pipeline = StableDiffusionPipeline(
+            vae=accelerator.unwrap_model(vae),
+            text_encoder=accelerator.unwrap_model(text_encoder),
+            tokenizer=tokenizer,
+            unet=accelerator.unwrap_model(unet),
+            scheduler=scheduler,
+            safety_checker=None,
+            requires_safety_checker=False,
+            feature_extractor=None,
+        )
+    else:
+        pipeline = StableDiffusionPipeline.from_pretrained(
+            args.pretrained_model_name_or_path,
+            vae=accelerator.unwrap_model(vae),
+            text_encoder=accelerator.unwrap_model(text_encoder),
+            tokenizer=tokenizer,
+            unet=accelerator.unwrap_model(unet),
+            safety_checker=None,
+            revision=args.revision,
+            variant=args.variant,
+            torch_dtype=weight_dtype,
+        )
     pipeline = pipeline.to(accelerator.device)
     pipeline.set_progress_bar_config(disable=True)
 
@@ -85,7 +99,7 @@ def log_validation(vae, text_encoder, tokenizer, unet, args, accelerator, weight
 
         with autocast_ctx:
             print("PROMPT: ", args.validation_prompts[i])
-            image = pipeline(args.validation_prompts[i], num_inference_steps=20, generator=generator).images[0]
+            image = pipeline(args.validation_prompts[i], num_inference_steps=50, generator=generator).images[0]
             print("\n")
 
         images.append(image)
@@ -380,6 +394,11 @@ def main():
     if(args.dataset_name == 'fundus'):
         train_csv = pd.read_csv(args.train_csv)
         test_csv = pd.read_csv(args.test_csv)
+
+        if(args.max_train_samples is not None):
+            print("Sampling {} samples from the training dataset".format(args.max_train_samples))
+            train_csv = train_csv.sample(n=args.max_train_samples, random_state=args.seed).reset_index(drop=True)
+
         train_dataset = RetinalFundusDataset(
             train_csv,
             tokenizer=tokenizer,
@@ -403,6 +422,11 @@ def main():
         
         train_df = pd.read_excel(args.train_csv)
         train_df['path'] = train_df['path'].apply(lambda x: os.path.join(IMG_DIR, x))
+
+        if(args.max_train_samples is not None):
+            print("Sampling {} samples from the training dataset".format(args.max_train_samples))
+            train_df = train_df.sample(n=args.max_train_samples, random_state=args.seed).reset_index(drop=True)
+
         train_dataset = MimicCXRDataset(
             train_df,
             tokenizer=tokenizer,
@@ -590,7 +614,12 @@ def main():
                     noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
                 # Get the text embedding for conditioning
-                encoder_hidden_states = text_encoder(batch["input_ids"], return_dict=False)[0]
+                if(args.pretrained_model_name_or_path == 'radedit'):
+                    encoder_hidden_states = text_encoder(batch["input_ids"], 
+                                                        attention_mask=batch["attention_mask"],
+                                                        return_dict=False)[0]
+                else:
+                    encoder_hidden_states = text_encoder(batch["input_ids"], return_dict=False)[0]
 
                 # Get the target for loss depending on the prediction type
                 if args.prediction_type is not None:
@@ -710,6 +739,7 @@ def main():
                     accelerator,
                     weight_dtype,
                     global_step,
+                    noise_scheduler,
                 )
                 if args.use_ema:
                     # Switch back to the original UNet parameters.
@@ -722,14 +752,26 @@ def main():
         if args.use_ema:
             ema_unet.copy_to(unet.parameters())
 
-        pipeline = StableDiffusionPipeline.from_pretrained(
-            args.pretrained_model_name_or_path,
-            text_encoder=text_encoder,
-            vae=vae,
-            unet=unet,
-            revision=args.revision,
-            variant=args.variant,
-        )
+        if(args.pretrained_model_name_or_path == 'radedit'):
+            pipeline = StableDiffusionPipeline(
+                vae=vae,
+                text_encoder=text_encoder,
+                tokenizer=tokenizer,
+                unet=unet,
+                scheduler=noise_scheduler,
+                safety_checker=None,
+                requires_safety_checker=False,
+                feature_extractor=None,
+            )
+        else:
+            pipeline = StableDiffusionPipeline.from_pretrained(
+                args.pretrained_model_name_or_path,
+                text_encoder=text_encoder,
+                vae=vae,
+                unet=unet,
+                revision=args.revision,
+                variant=args.variant,
+            )
         model_name = MODEL_NAME_MAPPING_DICT[args.pretrained_model_name_or_path] + "_" + args.training_setting + "_" + str(args.resolution)
         pipeline.save_pretrained(os.path.join(args.output_dir, model_name))
 

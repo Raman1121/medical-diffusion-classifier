@@ -3,7 +3,8 @@ import os
 import os.path as osp
 import torch
 from tqdm import tqdm
-
+import numpy as np
+from sklearn.metrics import confusion_matrix
 
 def mean_per_class_acc(correct, labels):
     total_acc = 0
@@ -35,6 +36,13 @@ def main():
     print(f'Top 1 acc: {correct / len(preds) * 100:.2f}%')
     # mean per class
     print(f'Mean per class acc: {mean_per_class_acc(preds == labels, labels) * 100:.2f}%')
+
+    preds_np = preds.cpu().numpy()
+    labels_np = labels.cpu().numpy()
+
+    cm = confusion_matrix(labels_np, preds_np)
+
+    np.save(os.path.join(args.folder, 'confusion_matrix.npy'), cm)
 
 
 if __name__ == '__main__':

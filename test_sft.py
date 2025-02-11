@@ -25,6 +25,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.parallel
+from torchvision import transforms
 
 from timm.data import create_dataset, create_loader, resolve_data_config, RealLabelsImagenet
 from timm.layers import apply_test_time_pool, set_fast_norm
@@ -296,6 +297,22 @@ def validate(args):
     #     trust_remote_code=args.dataset_trust_remote_code,
     # )
 
+    ### CREATE TEST TRANSFORMS HERE ###
+    # import pdb; pdb.set_trace()
+
+    def _convert_image_to_rgb(image):
+        return image.convert("RGB")
+
+    test_transforms = transforms.Compose(
+        [
+            transforms.Resize(data_config['input_size'][1], interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(data_config['input_size'][1]),
+            _convert_image_to_rgb,
+            transforms.ToTensor(),
+            transforms.Normalize([data_config['mean'][0]], [data_config['std'][0]])
+        ]
+    )
+
     assert args.test_csv is not None
 
     try:
@@ -303,20 +320,28 @@ def validate(args):
     except:
         test_csv = pd.read_excel(args.test_csv)
 
+    print(len(test_csv))
     if(args.max_samples is not None):
         print("Sampling ", args.max_samples, " samples")
         test_csv = test_csv.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
+    print(len(test_csv))
 
     if(args.dataset == 'fundus'):
         dataset = RetinalFundusDatasetSFT(
                 df=test_csv,
-                transform=None,
+                transform=test_transforms,
                 seed=args.seed,
                 img_path_key='path',
                 diagnosis_col_key='Unhealthy',
             )
     elif(args.dataset == 'mimic'):
-        dataset = MimicCXRDatasetSFT(test_csv, transform=None)
+        dataset = MimicCXRDatasetSFT(            
+                df=test_csv,
+                transform=test_transforms,
+                seed=args.seed,
+                img_path_key='path',
+                diagnosis_col_key='Unhealthy',
+        )
     else:
         raise NotImplementedError(f"Dataset {args.dataset} not implemented")
 
