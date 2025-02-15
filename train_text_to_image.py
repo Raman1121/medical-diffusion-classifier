@@ -45,7 +45,7 @@ from diffusers.utils.torch_utils import is_compiled_module
 from transformers import AutoModel, AutoTokenizer
 
 from parse_args.parse_args_t2i import parse_args_training
-from data.t2i_data import RetinalFundusDataset, MimicCXRDataset
+from data.t2i_data import RetinalFundusDataset, MimicCXRDataset, CheXpertDataset
 
 
 if is_wandb_available():
@@ -133,7 +133,7 @@ def main():
     MODEL_NAME_MAPPING_DICT = {
         "CompVis/stable-diffusion-v1-4": "SD-V1-4",
         "stabilityai/stable-diffusion-2": "SD-V2",
-        "Efficient-Large-Model/Sana_600M_512px_diffusers": "Sana_600M",
+        # "Efficient-Large-Model/Sana_600M_512px_diffusers": "Sana_600M",
         "radedit": "radedit"
     }
 
@@ -239,6 +239,15 @@ def main():
                 trust_remote_code=True,
             )
             vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae")
+        # elif("Sana" in args.pretrained_model_name_or_path):
+        #     from diffusers import SanaPipeline
+        #     pipe = SanaPipeline.from_pretrained(
+        #         args.pretrained_model_name_or_path,
+        #         variant="fp16",
+        #         torch_dtype=torch.float16,
+        #     )
+        #     text_encoder = pipe.text_encoder
+        #     vae = pipe.vae
         else:
             text_encoder = CLIPTextModel.from_pretrained(
                 args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, variant=args.variant
@@ -249,6 +258,10 @@ def main():
 
     if(args.pretrained_model_name_or_path == 'radedit'):
         unet = UNet2DConditionModel.from_pretrained("microsoft/radedit", subfolder="unet")
+    # elif("Sana" in args.pretrained_model_name_or_path):
+    #     unet = pipe.unet
+    #     noise_scheduler = pipe.scheduler
+    #     tokenizer = pipe.tokenizer
     else:
         unet = UNet2DConditionModel.from_pretrained(
             args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision
@@ -431,7 +444,9 @@ def main():
             train_df,
             tokenizer=tokenizer,
             transform=train_transforms,
-            seed=args.seed
+            seed=args.seed,
+            img_path_key=args.image_column,
+            caption_col_key=args.caption_column,
         )
 
         test_df = pd.read_excel(args.test_csv)
@@ -440,10 +455,38 @@ def main():
             test_df,
             tokenizer=tokenizer,
             transform=test_transforms,
-            seed=args.seed
+            seed=args.seed,
+            img_path_key=args.image_column,
+            caption_col_key=args.caption_column,
         )
         args.validation_prompts = test_df[args.caption_column].tolist()[0:20]      # Selecting only 20 images for validation
 
+    elif(args.dataset_name == 'chexpert'):
+        train_csv = pd.read_csv(args.train_csv)
+        test_csv = pd.read_csv(args.test_csv)
+
+        if(args.max_train_samples is not None):
+            print("Sampling {} samples from the training dataset".format(args.max_train_samples))
+            train_csv = train_csv.sample(n=args.max_train_samples, random_state=args.seed).reset_index(drop=True)
+
+        train_dataset = CheXpertDataset(
+            train_csv,
+            tokenizer=tokenizer,
+            transform=train_transforms,
+            seed=args.seed,
+            img_path_key=args.image_column,
+            caption_col_key=args.caption_column,
+        )
+        test_dataset = CheXpertDataset(
+            test_csv,
+            tokenizer=tokenizer,
+            transform=test_transforms,
+            seed=args.seed,
+            img_path_key=args.image_column,
+            caption_col_key=args.caption_column,
+        )
+        args.validation_prompts = test_csv[args.caption_column].tolist()[0:20]
+    
     else:
         raise NotImplementedError(f"Dataset {args.dataset_name} not implemented")
     
@@ -763,6 +806,15 @@ def main():
                 requires_safety_checker=False,
                 feature_extractor=None,
             )
+        # elif("Sana" in args.pretrained_model_name_or_path):
+        #     pipeline = SanaPipeline(
+        #         vae=vae,
+        #         text_encoder=text_encoder,
+        #         unet=unet,
+        #         scheduler=noise_scheduler,
+        #         safety_checker=None,
+        #         requires_safety_checker=False,
+        #     )
         else:
             pipeline = StableDiffusionPipeline.from_pretrained(
                 args.pretrained_model_name_or_path,
