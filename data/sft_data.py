@@ -68,3 +68,38 @@ class MimicCXRDatasetSFT(torch.utils.data.Dataset):
             im = self.transform(im)
 
         return im, torch.tensor(self.df[self.diagnosis_col_key].iloc[idx])
+    
+class CheXpertDatasetSFT(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        df,
+        transform=None,
+        seed=42,
+        img_path_key='Path',
+        caption_col_key='Simple_prompt',
+        sensitive_attribute="Sex",
+    ):
+        
+        self.df = df
+        self.transform = transform
+        self.img_path_key = img_path_key
+        self.diagnosis_col_key = caption_col_key
+        self.sensitive_attribute = sensitive_attribute
+
+        random.seed(seed)
+
+    def __len__(self):
+        return len(self.df)
+    
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        img_path = self.df[self.img_path_key][idx]
+        im = Image.open(img_path).convert("RGB")
+        sens_attr = torch.tensor(self.df[self.sensitive_attribute].iloc[idx])
+
+        if self.transform:
+            im = self.transform(im)
+        
+        return im, torch.tensor(self.df[self.diagnosis_col_key].iloc[idx]), sens_attr

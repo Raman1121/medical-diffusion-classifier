@@ -335,6 +335,9 @@ group.add_argument('--wandb-tags', default=[], type=str, nargs='+',
 group.add_argument('--wandb-resume-id', default='', type=str, metavar='ID',
                    help='If resuming a run, the id of the run in wandb')
 
+group.add_argument('--sensitive_attribute', type=str, default='Sex',
+                   help='Sensitive Attribute')
+
 
 def _parse_args():
     # Do we have a config file to parse?

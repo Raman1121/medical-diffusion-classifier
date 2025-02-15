@@ -33,7 +33,14 @@ from timm.models import create_model, load_checkpoint, is_model, list_models
 from timm.utils import accuracy, AverageMeter, natural_key, setup_default_logging, set_jit_fuser, \
     decay_batch_step, check_batch_size_retry, ParseKwargs, reparameterize_model
 
-from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT, CheXpertDatasetSFT
+
+from fairlearn.metrics import (
+    equalized_odds_difference,
+    equalized_odds_ratio,
+    demographic_parity_difference,
+    demographic_parity_ratio,
+)
 
 try:
     from apex import amp
@@ -342,6 +349,15 @@ def validate(args):
                 img_path_key='path',
                 diagnosis_col_key='Unhealthy',
         )
+    elif(args.dataset == 'chexpert'):
+        dataset = CheXpertDatasetSFT(            
+                df=test_csv,
+                transform=test_transforms,
+                seed=args.seed,
+                img_path_key='Path',
+                diagnosis_col_key='Unhealthy',
+                sensitive_attribute=args.sensitive_attribute
+        )
     else:
         raise NotImplementedError(f"Dataset {args.dataset} not implemented")
 
@@ -379,6 +395,8 @@ def validate(args):
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    DPD = AverageMeter()
+    EOD = AverageMeter()
 
     model.eval()
     with torch.no_grad():
@@ -390,7 +408,7 @@ def validate(args):
             model(input)
 
         end = time.time()
-        for batch_idx, (input, target) in enumerate(loader):
+        for batch_idx, (input, target, sens_attr) in enumerate(loader):
             if args.no_prefetcher:
                 target = target.to(device=device)
                 input = input.to(device=device, dtype=model_dtype)
@@ -413,6 +431,15 @@ def validate(args):
             losses.update(loss.item(), input.size(0))
             top1.update(acc1.item(), input.size(0))
             top5.update(acc5.item(), input.size(0))
+
+            # Fairness Performance
+            # 1. Demographic Parity Difference
+            _dpd = round(demographic_parity_difference(target, output, sens_attr), 4)
+            DPD.update(_dpd, input.size(0))
+
+            # 2. Equalized Odds Difference
+            _eod = round(equalized_odds_difference(target, output, sens_attr), 4)
+            EOD.update(_eod, input.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -444,14 +471,16 @@ def validate(args):
         model=args.model,
         top1=round(top1a, 4), top1_err=round(100 - top1a, 4),
         top5=round(top5a, 4), top5_err=round(100 - top5a, 4),
+        EOD=round(EOD.avg, 4),
+        DPD=round(DPD.avg, 4),
         param_count=round(param_count / 1e6, 2),
         img_size=data_config['input_size'][-1],
         crop_pct=crop_pct,
         interpolation=data_config['interpolation'],
     )
 
-    _logger.info(' * Acc@1 {:.3f} ({:.3f}) Acc@5 {:.3f} ({:.3f})'.format(
-       results['top1'], results['top1_err'], results['top5'], results['top5_err']))
+    _logger.info(' * Acc@1 {:.3f} ({:.3f}) Acc@5 {:.3f} ({:.3f}) DPD {:.3f} EOD {:.3f}'.format(
+       results['top1'], results['top1_err'], results['top5'], results['top5_err'], results['DPD'], results['EOD']))
 
     return results
 
