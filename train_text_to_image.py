@@ -845,7 +845,7 @@ def main():
 
             for i in range(len(args.validation_prompts)):
                 with torch.autocast("cuda"):
-                    image = pipeline(args.validation_prompts[i], num_inference_steps=50, generator=generator).images[0]
+                    image = pipeline(args.validation_prompts[i], num_inference_steps=50, generator=generator, height=args.resolution, width=args.resolution).images[0]
                 images.append(image)
 
     accelerator.end_training()
