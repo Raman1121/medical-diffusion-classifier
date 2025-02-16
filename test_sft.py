@@ -42,6 +42,8 @@ from fairlearn.metrics import (
     demographic_parity_ratio,
 )
 
+import sklearn.metrics as sklm
+
 try:
     from apex import amp
     has_apex = True
@@ -180,6 +182,8 @@ parser.add_argument('--seed', default=42, type=int,
                     help='seed for experiments')
 parser.add_argument('--max_samples', default=None, type=int,
                     help='Max number of samples to use for evaluation')
+parser.add_argument('--sensitive_attribute', type=str, default='Sex',
+                   help='Sensitive Attribute')
 
 
 def validate(args):
@@ -350,6 +354,7 @@ def validate(args):
                 diagnosis_col_key='Unhealthy',
         )
     elif(args.dataset == 'chexpert'):
+        
         dataset = CheXpertDatasetSFT(            
                 df=test_csv,
                 transform=test_transforms,
@@ -373,22 +378,30 @@ def validate(args):
         real_labels = None
 
     crop_pct = 1.0 if test_time_pool else data_config['crop_pct']
-    loader = create_loader(
+    # loader = create_loader(
+    #     dataset,
+    #     input_size=data_config['input_size'],
+    #     batch_size=args.batch_size,
+    #     use_prefetcher=args.prefetcher,
+    #     interpolation=data_config['interpolation'],
+    #     mean=data_config['mean'],
+    #     std=data_config['std'],
+    #     num_workers=args.workers,
+    #     crop_pct=crop_pct,
+    #     crop_mode=data_config['crop_mode'],
+    #     crop_border_pixels=args.crop_border_pixels,
+    #     pin_memory=args.pin_mem,
+    #     device=device,
+    #     img_dtype=model_dtype or torch.float32,
+    #     tf_preprocessing=args.tf_preprocessing,
+    # )
+    loader = torch.utils.data.DataLoader(
         dataset,
-        input_size=data_config['input_size'],
         batch_size=args.batch_size,
-        use_prefetcher=args.prefetcher,
-        interpolation=data_config['interpolation'],
-        mean=data_config['mean'],
-        std=data_config['std'],
+        shuffle=False,
         num_workers=args.workers,
-        crop_pct=crop_pct,
-        crop_mode=data_config['crop_mode'],
-        crop_border_pixels=args.crop_border_pixels,
         pin_memory=args.pin_mem,
-        device=device,
-        img_dtype=model_dtype or torch.float32,
-        tf_preprocessing=args.tf_preprocessing,
+        drop_last=False
     )
 
     batch_time = AverageMeter()
@@ -397,6 +410,7 @@ def validate(args):
     top5 = AverageMeter()
     DPD = AverageMeter()
     EOD = AverageMeter()
+    AUC = AverageMeter()
 
     model.eval()
     with torch.no_grad():
@@ -409,6 +423,7 @@ def validate(args):
 
         end = time.time()
         for batch_idx, (input, target, sens_attr) in enumerate(loader):
+
             if args.no_prefetcher:
                 target = target.to(device=device)
                 input = input.to(device=device, dtype=model_dtype)
@@ -432,13 +447,29 @@ def validate(args):
             top1.update(acc1.item(), input.size(0))
             top5.update(acc5.item(), input.size(0))
 
+            # Calculate overall AUC
+            # import pdb; pdb.set_trace()
+            output_with_softmax = torch.softmax(output, dim=1).cpu().detach().data.numpy()
+            if output_with_softmax.shape[1] == 2:
+                output_with_softmax = output_with_softmax[:, 1]
+            
+            try:
+                _auc_score = sklm.roc_auc_score(target.cpu(), output_with_softmax, multi_class="ovr")
+            except:
+                _auc_score = 0
+                
+            AUC.update(_auc_score, input.size(0))
+
             # Fairness Performance
+            preds = torch.argmax(output, dim=1)
+            preds = preds.cpu()
+
             # 1. Demographic Parity Difference
-            _dpd = round(demographic_parity_difference(target, output, sens_attr), 4)
+            _dpd = round(demographic_parity_difference(target.cpu(), preds, sensitive_features=sens_attr), 4)
             DPD.update(_dpd, input.size(0))
 
             # 2. Equalized Odds Difference
-            _eod = round(equalized_odds_difference(target, output, sens_attr), 4)
+            _eod = round(equalized_odds_difference(target.cpu(), preds, sensitive_features=sens_attr), 4)
             EOD.update(_eod, input.size(0))
 
             # measure elapsed time
@@ -473,6 +504,7 @@ def validate(args):
         top5=round(top5a, 4), top5_err=round(100 - top5a, 4),
         EOD=round(EOD.avg, 4),
         DPD=round(DPD.avg, 4),
+        AUC=round(AUC.avg, 4),
         param_count=round(param_count / 1e6, 2),
         img_size=data_config['input_size'][-1],
         crop_pct=crop_pct,

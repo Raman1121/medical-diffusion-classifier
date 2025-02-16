@@ -76,14 +76,14 @@ class CheXpertDatasetSFT(torch.utils.data.Dataset):
         transform=None,
         seed=42,
         img_path_key='Path',
-        caption_col_key='Simple_prompt',
-        sensitive_attribute="Sex",
+        diagnosis_col_key='Unhealthy',
+        sensitive_attribute=None,
     ):
         
         self.df = df
         self.transform = transform
         self.img_path_key = img_path_key
-        self.diagnosis_col_key = caption_col_key
+        self.diagnosis_col_key = diagnosis_col_key
         self.sensitive_attribute = sensitive_attribute
 
         random.seed(seed)
@@ -97,9 +97,8 @@ class CheXpertDatasetSFT(torch.utils.data.Dataset):
 
         img_path = self.df[self.img_path_key][idx]
         im = Image.open(img_path).convert("RGB")
-        sens_attr = torch.tensor(self.df[self.sensitive_attribute].iloc[idx])
-
         if self.transform:
             im = self.transform(im)
-        
+
+        sens_attr = self.df[self.sensitive_attribute].iloc[idx] if self.sensitive_attribute is not None else torch.tensor(-1)
         return im, torch.tensor(self.df[self.diagnosis_col_key].iloc[idx]), sens_attr

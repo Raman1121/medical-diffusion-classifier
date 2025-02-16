@@ -1,4 +1,4 @@
-# Source: https://raw.githubusercontent.com/huggingface/pytorch-image-models/refs/heads/main/train.py
+# Source: https://github.com/huggingface/pytorch-image-models/blob/main/train.py
 
 #!/usr/bin/env python3
 """ ImageNet Training Script
@@ -44,8 +44,15 @@ from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler_v2, scheduler_kwargs
 from timm.utils import ApexScaler, NativeScaler
 
-from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT, CheXpertDatasetSFT
 from parse_args.parse_args_sft import _parse_args
+import sklearn.metrics as sklm
+from fairlearn.metrics import (
+    equalized_odds_difference,
+    equalized_odds_ratio,
+    demographic_parity_difference,
+    demographic_parity_ratio,
+)
 
 try:
     from apex import amp
@@ -366,6 +373,15 @@ def main():
             img_path_key='path',
             diagnosis_col_key='Unhealthy',
         )
+    elif(args.dataset == 'chexpert'):
+        dataset_train = CheXpertDatasetSFT(            
+                df=train_csv,
+                transform=None,
+                seed=args.seed,
+                img_path_key='Path',
+                diagnosis_col_key='Unhealthy',
+                sensitive_attribute=None            # Explicitly set to None so that the loader only returns (image, label)
+        )
     else:
         raise NotImplementedError(f"Dataset {args.dataset} not implemented")
 
@@ -400,6 +416,17 @@ def main():
                 img_path_key='path',
                 diagnosis_col_key='Unhealthy',
             )
+        elif(args.dataset == 'chexpert'):
+            dataset_eval = CheXpertDatasetSFT(            
+                    df=test_csv,
+                    transform=None,
+                    seed=args.seed,
+                    img_path_key='Path',
+                    diagnosis_col_key='Unhealthy',
+                    sensitive_attribute=None            # Explicitly set to None so that the loader only returns (image, label) 
+            )
+        else:
+            raise NotImplementedError(f"Dataset {args.dataset} not implemented")
 
     # setup mixup / cutmix
     collate_fn = None
@@ -734,6 +761,10 @@ def train_one_epoch(
     data_time_m = utils.AverageMeter()
     losses_m = utils.AverageMeter()
 
+    # if(args.sensitive_attribute is not None):
+    #     DPD = utils.AverageMeter()
+    #     EOD = utils.AverageMeter()
+
     model.train()
 
     accum_steps = args.grad_accum_steps
@@ -767,8 +798,18 @@ def train_one_epoch(
             with amp_autocast():
                 output = model(input)
                 loss = loss_fn(output, target)
+
+                # Fairness metrics
+                # if(args.sensitive_attribute is not None):
+                #     _dpd = round(demographic_parity_difference(target, output, args.sensitive_attribute), 4)
+                #     _eod = round(equalized_odds_difference(target, output, args.sensitive_attribute), 4)
             if accum_steps > 1:
                 loss /= accum_steps
+
+            # if(args.sensitive_attribute is not None):
+            #     return loss, _dpd, _eod
+            # else:
+            #     return loss
             return loss
 
         def _backward(_loss):
@@ -795,13 +836,26 @@ def train_one_epoch(
 
         if has_no_sync and not need_update:
             with model.no_sync():
+                # if(args.sensitive_attribute is not None):
+                #     loss, _dpd, _eod = _forward()
+                # else:
+                #     loss = _forward()
                 loss = _forward()
                 _backward(loss)
         else:
+            # if(args.sensitive_attribute is not None):
+            #     loss, _dpd, _eod = _forward()
+            # else:
+            #     loss = _forward()
             loss = _forward()
             _backward(loss)
 
         losses_m.update(loss.item() * accum_steps, input.size(0))
+        # if(args.sensitive_attribute is not None):
+        #     DPD.update(_dpd * accum_steps, input.size(0))
+        #     EOD.update(_eod * accum_steps, input.size(0))
+
+        
         update_sample_count += input.size(0)
 
         if not need_update:
@@ -888,6 +942,7 @@ def validate(
     losses_m = utils.AverageMeter()
     top1_m = utils.AverageMeter()
     top5_m = utils.AverageMeter()
+    AUC = utils.AverageMeter()
 
     model.eval()
 
@@ -916,10 +971,21 @@ def validate(
                 loss = loss_fn(output, target)
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
 
+            # Calculate AUC
+            output_with_softmax = torch.softmax(output, dim=1).cpu().detach().data.numpy()
+            if output_with_softmax.shape[1] == 2:
+                output_with_softmax = output_with_softmax[:, 1]
+
+            try:
+                _auc_score = sklm.roc_auc_score(target.cpu(), output_with_softmax, multi_class="ovr")
+            except:
+                _auc_score = torch.tensor(0)
+
             if args.distributed:
                 reduced_loss = utils.reduce_tensor(loss.data, args.world_size)
                 acc1 = utils.reduce_tensor(acc1, args.world_size)
                 acc5 = utils.reduce_tensor(acc5, args.world_size)
+                _auc_score = utils.reduce_tensor(torch.tensor(_auc_score).to(device=device), args.world_size).item()
             else:
                 reduced_loss = loss.data
 
@@ -931,6 +997,7 @@ def validate(
             losses_m.update(reduced_loss.item(), input.size(0))
             top1_m.update(acc1.item(), output.size(0))
             top5_m.update(acc5.item(), output.size(0))
+            AUC.update(_auc_score, input.size(0))
 
             batch_time_m.update(time.time() - end)
             end = time.time()
@@ -942,9 +1009,10 @@ def validate(
                     f'Loss: {losses_m.val:>7.3f} ({losses_m.avg:>6.3f})  '
                     f'Acc@1: {top1_m.val:>7.3f} ({top1_m.avg:>7.3f})  '
                     f'Acc@5: {top5_m.val:>7.3f} ({top5_m.avg:>7.3f})'
+                    f'AUC: {AUC.val:>7.3f} ({AUC.avg:>7.3f})'
                 )
 
-    metrics = OrderedDict([('loss', losses_m.avg), ('top1', top1_m.avg), ('top5', top5_m.avg)])
+    metrics = OrderedDict([('loss', losses_m.avg), ('top1', top1_m.avg), ('top5', top5_m.avg), ('AUC', AUC.avg)])
 
     return metrics
 
