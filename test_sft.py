@@ -412,6 +412,10 @@ def validate(args):
     EOD = AverageMeter()
     AUC = AverageMeter()
 
+    if(args.sensitive_attribute == 'Sex'):
+        top1_acc_male = AverageMeter()
+        top1_acc_female = AverageMeter()
+
     model.eval()
     with torch.no_grad():
         # warmup, reduce variability of first batch time, especially for comparing torchscript vs non
@@ -446,6 +450,19 @@ def validate(args):
             losses.update(loss.item(), input.size(0))
             top1.update(acc1.item(), input.size(0))
             top5.update(acc5.item(), input.size(0))
+
+            # TODO: Calculate top1 acc for male and female separately
+            if(args.sensitive_attribute == 'Sex'):
+                male_indices = [i for i, gender in enumerate(sens_attr) if gender == "Male"]
+                female_indices = [i for i, gender in enumerate(sens_attr) if gender == "Female"]
+
+                import pdb; pdb.set_trace()
+
+                acc1_male, _ = accuracy(output.detach()[male_indices], target[male_indices], topk=(1, 5))
+                acc1_female, _ = accuracy(output.detach()[female_indices], target[female_indices], topk=(1, 5))
+
+                top1_acc_male.update(acc1_male.item(), len(male_indices))
+                top1_acc_female.update(acc1_female.item(), len(female_indices))
 
             # Calculate overall AUC
             # import pdb; pdb.set_trace()
@@ -510,6 +527,10 @@ def validate(args):
         crop_pct=crop_pct,
         interpolation=data_config['interpolation'],
     )
+
+    if(args.sensitive_attribute == 'Sex'):
+        results['top1_male'] = round(top1_acc_male.avg, 4)
+        results['top1_female'] = round(top1_acc_female.avg, 4)
 
     _logger.info(' * Acc@1 {:.3f} ({:.3f}) Acc@5 {:.3f} ({:.3f}) DPD {:.3f} EOD {:.3f}'.format(
        results['top1'], results['top1_err'], results['top5'], results['top5_err'], results['DPD'], results['EOD']))
@@ -603,10 +624,7 @@ def main():
             results = validate(args)
 
     if args.results_file:
-        try:
-            os.makedirs(args.results_dir, exist_ok=True)
-        except:
-            import pdb; pdb.set_trace()
+        os.makedirs(args.results_dir, exist_ok=True)
         write_results(os.path.join(args.results_dir, args.dataset + "_" + args.results_file), results, format=args.results_format)
         print(f'--results-file\n{os.path.join(args.results_dir, args.results_file)}')
 
