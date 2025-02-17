@@ -456,8 +456,6 @@ def validate(args):
                 male_indices = [i for i, gender in enumerate(sens_attr) if gender == "Male"]
                 female_indices = [i for i, gender in enumerate(sens_attr) if gender == "Female"]
 
-                import pdb; pdb.set_trace()
-
                 acc1_male, _ = accuracy(output.detach()[male_indices], target[male_indices], topk=(1, 5))
                 acc1_female, _ = accuracy(output.detach()[female_indices], target[female_indices], topk=(1, 5))
 
@@ -625,7 +623,15 @@ def main():
 
     if args.results_file:
         os.makedirs(args.results_dir, exist_ok=True)
-        write_results(os.path.join(args.results_dir, args.dataset + "_" + args.results_file), results, format=args.results_format)
+        filename = os.path.join(args.results_dir, args.dataset + "_" + args.results_file)
+
+        # import pdb; pdb.set_trace()
+
+        # Check if the file already exists
+        # if not os.path.exists(filename):
+        #     write_results(filename, results, format=args.results_format, exists=False)
+        # else:
+        write_results(filename, results, format=args.results_format)
         print(f'--results-file\n{os.path.join(args.results_dir, args.results_file)}')
 
     # output results in JSON to stdout w/ delimiter for runner script
@@ -633,7 +639,7 @@ def main():
 
 
 def write_results(results_file, results, format='csv'):
-    with open(results_file, mode='w') as cf:
+    with open(results_file, mode='a') as cf:
         if format == 'json':
             json.dump(results, cf, indent=4)
         else:

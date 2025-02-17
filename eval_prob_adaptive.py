@@ -12,7 +12,7 @@ from diffusion.utils import LOG_DIR, get_formatstr
 import torchvision.transforms as torch_transforms
 from torchvision.transforms.functional import InterpolationMode
 
-from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT
+from data.sft_data import RetinalFundusDatasetSFT, MimicCXRDatasetSFT, CheXpertDatasetSFT
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -139,7 +139,7 @@ def main():
 
     # dataset args
     parser.add_argument('--dataset', type=str, default=None,
-                        choices=['fundus', 'mimic'], help='Dataset to use')
+                        choices=['fundus', 'mimic', 'chexpert'], help='Dataset to use')
     parser.add_argument('--split', type=str, default='train', choices=['train', 'test'], help='Name of split')
     parser.add_argument('--max_samples', type=int, default=None, help='Max number of samples to use for eval.')
     parser.add_argument('--label_key', type=str, default='Unhealthy', help='Col name that indicates label in the csv file')
@@ -161,6 +161,7 @@ def main():
     parser.add_argument('--worker_idx', type=int, default=0, help='Index of worker to use')
     parser.add_argument('--load_stats', action='store_true', help='Load saved stats to compute acc')
     parser.add_argument('--loss', type=str, default='l2', choices=('l1', 'l2', 'huber'), help='Type of loss to use')
+    parser.add_argument('--sensitive_attribute', type=str, default=None, help='Sensitive Atrribute')
 
     # args for adaptively choosing which classes to continue trying
     parser.add_argument('--to_keep', nargs='+', type=int, required=True)
@@ -185,6 +186,10 @@ def main():
         run_folder = osp.join(LOG_DIR, args.dataset + '_' + args.extra, name)
     else:
         run_folder = osp.join(LOG_DIR, args.dataset, name)
+
+    if(args.sensitive_attribute is not None):
+        run_folder = osp.join(run_folder, args.sensitive_attribute)
+
     os.makedirs(run_folder, exist_ok=True)
     print(f'Run folder: {run_folder}')
 
@@ -233,6 +238,24 @@ def main():
                                             img_path_key='path',
                                             diagnosis_col_key=args.label_key
                                             )
+        
+    elif(args.dataset == 'chexpert'):
+        prompts_df = pd.read_csv(args.prompt_path)
+        print("Length of original CSV: ", len(prompts_df))
+
+        if(args.max_samples is not None):
+            print("Sampling ", args.max_samples, " samples",)
+            prompts_df = prompts_df.sample(n=args.max_samples, random_state=42).reset_index(drop=True)
+        print(len(prompts_df))
+
+        target_dataset = CheXpertDatasetSFT(
+            prompts_df,
+            transform=transform,
+            img_path_key='Path',
+            diagnosis_col_key=args.label_key,
+            sensitive_attribute=args.sensitive_attribute
+        )
+
     else:
         raise NotImplementedError(f'Dataset {args.dataset} not implemented')
 
@@ -260,7 +283,8 @@ def main():
     embeddings = []
     with torch.inference_mode():
         for i in range(0, len(text_input.input_ids), 100):
-            if(args.dataset == 'mimic'):
+            # if(args.dataset == 'mimic'):
+            if(args.pretrained_model_name_or_path == 'radedit'):
                 # We are using the CXRBertModel while using RadEdit for MIMIC which requires attention_mask
                 text_embeddings = text_encoder(
                     text_input.input_ids[i: i + 100].to(device),
@@ -290,6 +314,7 @@ def main():
     for i in pbar:
         if total > 0:
             pbar.set_description(f'Acc: {100 * correct / total:.2f}%')
+        
         fname = osp.join(run_folder, formatstr.format(i) + '.pt')
         if os.path.exists(fname):
             print('Skipping', i)
@@ -298,16 +323,23 @@ def main():
                 correct += int(data['pred'] == data['label'])
                 total += 1
             continue
-        image, label = target_dataset[i]
+        try:
+            image, label = target_dataset[i]
+        except:
+            image, label, sens_attr = target_dataset[i]
         with torch.no_grad():
             img_input = image.to(device).unsqueeze(0)
             if args.dtype == 'float16':
                 img_input = img_input.half()
             x0 = vae.encode(img_input).latent_dist.mean
-            x0 *= 0.18215
+            # x0 *= 0.18215
+            x0 *= vae.config['scaling_factor']
         pred_idx, pred_errors = eval_prob_adaptive(unet, x0, text_embeddings, scheduler, args, latent_size, all_noise)
         pred = prompts_df[args.label_key][pred_idx]
-        torch.save(dict(errors=pred_errors, pred=pred, label=label), fname)
+        if(args.sensitive_attribute is not None):
+            torch.save(dict(errors=pred_errors, pred=pred, label=label, sens_attr=sens_attr), fname)
+        else:
+            torch.save(dict(errors=pred_errors, pred=pred, label=label), fname)
         if pred == label:
             correct += 1
 

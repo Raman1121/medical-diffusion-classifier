@@ -1,6 +1,7 @@
 import torch
 from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler, StableDiffusionPipeline, \
-    EulerDiscreteScheduler
+    EulerDiscreteScheduler, DDIMScheduler
+from transformers import AutoModel, AutoTokenizer
 
 MODEL_IDS = {
     '1-1': "CompVis/stable-diffusion-v1-1",
@@ -22,15 +23,53 @@ def get_sd_model(args):
     #     raise NotImplementedError
 
     # assert args.version in MODEL_IDS.keys()
-    model_id = args.pretrained_model_name_or_path
-    scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler)
-    pipe.enable_xformers_memory_efficient_attention()
-    vae = pipe.vae
-    tokenizer = pipe.tokenizer
-    text_encoder = pipe.text_encoder
-    unet = pipe.unet
-    dtype = pipe.dtype
+
+    if(args.pretrained_model_name_or_path == "radedit"):
+        unet = UNet2DConditionModel.from_pretrained("microsoft/radedit", subfolder="unet")
+        vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae")
+        text_encoder = AutoModel.from_pretrained(
+            "microsoft/BiomedVLP-BioViL-T",
+            trust_remote_code=True,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(
+            "microsoft/BiomedVLP-BioViL-T",
+            model_max_length=128,
+            trust_remote_code=True,
+        )
+        # scheduler = DDIMScheduler(
+        #     beta_schedule="linear",
+        #     clip_sample=False,
+        #     prediction_type="epsilon",
+        #     timestep_spacing="trailing",
+        #     steps_offset=1,
+        # )
+        scheduler = EulerDiscreteScheduler(
+            beta_schedule="scaled_linear", 
+            prediction_type="epsilon", 
+            timestep_spacing="trailing", 
+            steps_offset=1
+            )
+        pipe = StableDiffusionPipeline(
+            vae=vae,
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            unet=unet,
+            scheduler=scheduler,
+            safety_checker=None,
+            requires_safety_checker=False,
+            feature_extractor=None,
+        )
+        dtype = pipe.dtype
+    else:
+        model_id = args.pretrained_model_name_or_path
+        scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+        pipe = StableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler)
+        pipe.enable_xformers_memory_efficient_attention()
+        vae = pipe.vae
+        tokenizer = pipe.tokenizer
+        text_encoder = pipe.text_encoder
+        unet = pipe.unet
+        dtype = pipe.dtype
 
     return vae, tokenizer, text_encoder, unet, scheduler, dtype
 
