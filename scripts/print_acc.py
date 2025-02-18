@@ -25,12 +25,25 @@ def main():
 
     preds = []
     labels = []
+    all_data = []
     for f in tqdm(files):
         data = torch.load(osp.join(args.folder, f))
         preds.append(data['pred'])
         labels.append(data['label'])
+        all_data.append(data)
     preds = torch.tensor(preds)
     labels = torch.tensor(labels)
+    
+    if("sens_attr" in all_data[0].keys()):
+        # Calculate accuracy for each sensitive attribute
+        
+        sens_attr = np.array([data['sens_attr'] for data in all_data])
+        sens_attrs = np.unique(sens_attr)
+        for sa in sens_attrs:
+            mask = sens_attr == sa
+            print(f'Sensitive attribute: {sa}')
+            print(f'Accuracy: {(preds[mask] == labels[mask]).sum().item() / mask.sum().item() * 100:.2f}%')
+    
     # top 1
     correct = (preds == labels).sum().item()
     print(f'Top 1 acc: {correct / len(preds) * 100:.2f}%')
