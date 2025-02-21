@@ -4,7 +4,14 @@ import os.path as osp
 import torch
 from tqdm import tqdm
 import numpy as np
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, f1_score
+
+from fairlearn.metrics import (
+    equalized_odds_difference,
+    equalized_odds_ratio,
+    demographic_parity_difference,
+    demographic_parity_ratio,
+)
 
 def mean_per_class_acc(correct, labels):
     total_acc = 0
@@ -47,8 +54,20 @@ def main():
     # top 1
     correct = (preds == labels).sum().item()
     print(f'Top 1 acc: {correct / len(preds) * 100:.2f}%')
+    
     # mean per class
     print(f'Mean per class acc: {mean_per_class_acc(preds == labels, labels) * 100:.2f}%')
+    
+    # f1 score
+    _f1_score = f1_score(labels, preds)
+    print(f'F1 Score: {_f1_score:.2f}%')
+
+    # DPD and EOD
+    dpd = demographic_parity_difference(labels, preds, sensitive_features=sens_attr)
+    eod = equalized_odds_difference(labels, preds, sensitive_features=sens_attr)
+
+    print("Demographic Parity Difference: ", round(dpd, 3))
+    print("Equalized Odds Difference: ", round(eod, 3))
 
     preds_np = preds.cpu().numpy()
     labels_np = labels.cpu().numpy()
